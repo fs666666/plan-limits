@@ -42,10 +42,10 @@ describe('plan-limits', () => {
 
       const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(200) })
 
-      // Shown as what is left; 5h comes before Week; under 10% left is red and reads Limit soon
+      // Ctx shows what is used and the limits what is left; 5h comes before Week; under 10% left is red
       const five = await ui.find({ key: 'five_hour' })
       const week = await ui.find({ key: 'seven_day' })
-      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx66% left███████░░░Cloudy340k/1M')
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34% used███░░░░░░░Cloudy340k/1M')
       expect(five?.text).toContain('↯ 5h7.5% left')
       expect(five?.text).toContain('Limit soon')
       expect(five?.text).toContain('resets 22:13')
@@ -70,7 +70,7 @@ describe('plan-limits', () => {
       expect(five?.text).not.toContain('Limit soon')
       expect((await ui.find({ key: 'seven_day' }))?.text).toContain('↻ Sun 00:00')
       expect((await ui.find({ key: 'cost' }))?.text).toBe('$1.23')
-      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx66% left')
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34% used')
     })
   }
 
@@ -111,7 +111,7 @@ describe('plan-limits', () => {
     on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
-    expect((await ui.find({ key: 'context' }))?.text).toContain('↯ Ctx5% left')
+    expect((await ui.find({ key: 'context' }))?.text).toContain('↯ Ctx95% used')
     expect((await ui.find({ key: 'context' }))?.text).toContain('Compact soon')
   })
 

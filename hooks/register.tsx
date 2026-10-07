@@ -39,14 +39,16 @@ function short(n: number): string {
   return String(n)
 }
 
-// Everything is shown as what is left, like a battery: the weather still follows what is used,
-// so less left reads as worse weather.
-function leftOf(used: number): number {
-  return Math.max(0, Math.round((100 - used) * 10) / 10)
+// A rate limit is a budget, so it shows what is left, like a battery; the context window is a
+// fill, so it shows what is used. Each number says which it is. The weather always follows what
+// is used: a fuller window or less budget left reads as worse weather.
+function shownOf(used: number, shows: 'used' | 'left'): number {
+  const value = shows === 'used' ? used : 100 - used
+  return Math.max(0, Math.round(value * 10) / 10)
 }
 
-function bar(left: number): string {
-  const filled = Math.max(0, Math.min(BAR_CELLS, Math.round((left / 100) * BAR_CELLS)))
+function bar(percent: number): string {
+  const filled = Math.max(0, Math.min(BAR_CELLS, Math.round((percent / 100) * BAR_CELLS)))
   return '█'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
 }
 
@@ -97,7 +99,15 @@ function widthOf(node: unknown): number {
 }
 
 // One gauge on the line: the context window or a rate-limit window; percent is how much is used
-type Gauge = { key: string; label: string; percent: number; fullWord?: string; reset?: string; size?: string }
+type Gauge = {
+  key: string
+  label: string
+  percent: number
+  shows: 'used' | 'left'
+  fullWord?: string
+  reset?: string
+  size?: string
+}
 
 // How much each window shows, from most to least, picked by what fits on the line
 type Detail = 'full' | 'compact' | 'minimal'
@@ -130,6 +140,7 @@ export const register: Register = on => {
         key: 'context',
         label: 'Ctx',
         percent: Math.round(context.percent ?? (tokens / context.window) * 100),
+        shows: 'used',
         fullWord: 'Compact soon',
         size: `${short(tokens)}/${short(context.window)}`,
       })
@@ -139,6 +150,7 @@ export const register: Register = on => {
         key: limit.kind,
         label: NAMES[limit.kind] ?? limit.kind,
         percent: limit.percentUsed,
+        shows: 'left',
         reset: resetText(limit, now),
       })
     }
@@ -149,15 +161,15 @@ export const register: Register = on => {
     const ours = (detail: Detail) => {
       const items = gauges.map(g => {
         const f = forecastOf(g.percent, g.fullWord)
-        const left = leftOf(g.percent)
+        const shown = shownOf(g.percent, g.shows)
         const reset = detail === 'minimal' ? '' : g.reset
         return (
           <Box key={g.key} flexDirection="row" columnGap={1}>
             {/* A trailing space here and after ↻: many terminals draw these symbols two columns wide */}
             <Text color={f.color}>{`${f.icon} `}</Text>
             <Text bold>{g.label}</Text>
-            <Text color={f.color} bold={f.isAlarm}>{`${left}% left`}</Text>
-            {detail === 'full' ? <Text color={f.color}>{bar(left)}</Text> : null}
+            <Text color={f.color} bold={f.isAlarm}>{`${shown}% ${g.shows}`}</Text>
+            {detail === 'full' ? <Text color={f.color}>{bar(shown)}</Text> : null}
             {detail === 'full' ? <Text color={f.color} bold={f.isAlarm}>{f.word}</Text> : null}
             {detail === 'full' && g.size ? <Text dimColor>{g.size}</Text> : null}
             {reset ? (
