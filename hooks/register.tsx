@@ -1,10 +1,12 @@
-// Plan limits band: a weather forecast for the plan's 5-hour and weekly rate-limit windows,
-// with each window's reset countdown and this session's API-equivalent cost, above the prompt.
+// Plan limits band: a weather forecast for the context window and the plan's 5-hour and weekly
+// rate-limit windows, with each window's reset time and this session's API-equivalent cost,
+// above the prompt.
 //
-// The figures are $.session.usage()'s, the same the status line has: rateLimits only on a
-// subscription and after the first response; cost is Claude Code's own estimate at API prices
-// (what /cost shows). session.measure pushes a redraw when a window moves a point or the cost
-// grows; a one-minute timer redraws so a 5-hour reset gains its weekday after midnight.
+// The figures are $.session.usage()'s, the same the status line has: context once a response
+// reported its fill; rateLimits only on a subscription and after the first response; cost is
+// Claude Code's own estimate at API prices (what /cost shows). session.measure pushes a redraw
+// when any of them moves; a one-minute timer redraws so a 5-hour reset gains its weekday after
+// midnight.
 import type { RenderElement, Register, SessionRateLimit } from 'claude-code'
 
 const NAMES: Record<string, string> = {
@@ -25,8 +27,16 @@ const FORECAST = [
 
 const BAR_CELLS = 10
 
-function forecastOf(percent: number) {
-  return FORECAST.find(f => percent <= f.upTo) ?? FORECAST[FORECAST.length - 1]!
+// The last band's word, per gauge: a full context window gets compacted, a full limit stops you
+function forecastOf(percent: number, fullWord = 'Limit soon') {
+  const f = FORECAST.find(f => percent <= f.upTo) ?? FORECAST[FORECAST.length - 1]!
+  return { ...f, word: f.upTo === Infinity ? fullWord : f.word, isAlarm: f.upTo === Infinity }
+}
+
+function short(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+  return String(n)
 }
 
 function bar(percent: number): string {
@@ -78,6 +88,9 @@ function widthOf(node: unknown): number {
   return width
 }
 
+// One gauge on the line: the context window or a rate-limit window
+type Gauge = { key: string; label: string; percent: number; fullWord?: string; reset?: string; size?: string }
+
 // How much each window shows, from most to least, picked by what fits on the line
 type Detail = 'full' | 'compact' | 'minimal'
 const DETAILS: Detail[] = ['full', 'compact', 'minimal']
@@ -91,33 +104,53 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    if (e.changed.includes('rateLimits') || e.changed.includes('cost')) $.ui.invalidate('ui.render')
+    $.ui.invalidate('ui.render')
     return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
 
-    const { rateLimits, cost } = await $.session.usage()
-    if (rateLimits.length === 0 && cost === undefined) return next(e)
+    const { context, rateLimits, cost } = await $.session.usage()
+    const now = await $.clock.now()
+
+    const gauges: Gauge[] = []
+    // The context window has a fill once a response reported one
+    if (context.window > 0 && (context.percent !== undefined || (context.tokens ?? 0) > 0)) {
+      const tokens = context.tokens ?? 0
+      gauges.push({
+        key: 'context',
+        label: 'Ctx',
+        percent: Math.round(context.percent ?? (tokens / context.window) * 100),
+        fullWord: 'Compact soon',
+        size: `${short(tokens)}/${short(context.window)}`,
+      })
+    }
+    for (const limit of sortLimits(rateLimits)) {
+      gauges.push({
+        key: limit.kind,
+        label: NAMES[limit.kind] ?? limit.kind,
+        percent: limit.percentUsed,
+        reset: resetText(limit, now),
+      })
+    }
+    if (gauges.length === 0 && cost === undefined) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)
-    const now = await $.clock.now()
-    const limits = sortLimits(rateLimits)
 
     const ours = (detail: Detail) => {
-      const items = limits.map(limit => {
-        const percent = limit.percentUsed
-        const f = forecastOf(percent)
-        const reset = detail === 'minimal' ? '' : resetText(limit, now)
+      const items = gauges.map(g => {
+        const f = forecastOf(g.percent, g.fullWord)
+        const reset = detail === 'minimal' ? '' : g.reset
         return (
-          <Box key={limit.kind} flexDirection="row" columnGap={1}>
+          <Box key={g.key} flexDirection="row" columnGap={1}>
             {/* A trailing space here and after ↻: many terminals draw these symbols two columns wide */}
             <Text color={f.color}>{`${f.icon} `}</Text>
-            <Text bold>{NAMES[limit.kind] ?? limit.kind}</Text>
-            <Text color={f.color} bold={f.word === 'Limit soon'}>{`${percent}%`}</Text>
-            {detail === 'full' ? <Text color={f.color}>{bar(percent)}</Text> : null}
-            {detail === 'full' ? <Text color={f.color} bold={f.word === 'Limit soon'}>{f.word}</Text> : null}
+            <Text bold>{g.label}</Text>
+            <Text color={f.color} bold={f.isAlarm}>{`${g.percent}%`}</Text>
+            {detail === 'full' ? <Text color={f.color}>{bar(g.percent)}</Text> : null}
+            {detail === 'full' ? <Text color={f.color} bold={f.isAlarm}>{f.word}</Text> : null}
+            {detail === 'full' && g.size ? <Text dimColor>{g.size}</Text> : null}
             {reset ? (
               <Text dimColor>
                 {detail === 'full' ? `· resets ${reset}` : `↻ ${reset}`}

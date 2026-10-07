@@ -24,7 +24,7 @@ const WEATHER = {
 
 const USAGE: SessionUsage = {
   startedAt: NOW - 3_600_000,
-  context: { window: 1_000_000 } as SessionUsage['context'],
+  context: { tokens: 340_000, window: 1_000_000, percent: 34 },
   rateLimits: [
     // Sunday 00:00 in whatever time zone the tests run in
     { kind: 'seven_day', percentUsed: 18, resetsAt: new Date(2026, 9, 11, 0, 0).toISOString() },
@@ -45,6 +45,7 @@ describe('plan-limits', () => {
       // 5h comes before Week; past 90% is red and reads Limit soon
       const five = await ui.find({ key: 'five_hour' })
       const week = await ui.find({ key: 'seven_day' })
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34%███░░░░░░░Cloudy340k/1M')
       expect(five?.text).toContain('↯ 5h92.5%')
       expect(five?.text).toContain('Limit soon')
       expect(five?.text).toContain('resets 22:13')
@@ -60,7 +61,7 @@ describe('plan-limits', () => {
       on('session.usage', () => ({ value: USAGE }))
       on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
 
-      const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(140) })
+      const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(170) })
 
       expect(await ui.drawn()).toMatchObject({ type: 'Box', props: { flexDirection: 'row' } })
       expect(await ui.find({ type: 'Text', text: /Cloudy/ })).toBeDefined()
@@ -69,6 +70,7 @@ describe('plan-limits', () => {
       expect(five?.text).not.toContain('Limit soon')
       expect((await ui.find({ key: 'seven_day' }))?.text).toContain('↻ Sun 00:00')
       expect((await ui.find({ key: 'cost' }))?.text).toBe('$1.23')
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34%')
     })
   }
 
@@ -91,9 +93,20 @@ describe('plan-limits', () => {
     expect((await ui.find({ key: 'five_hour' }))?.text).toContain('resets Thu 01:30')
   })
 
+  test('a nearly full context window reads Compact soon', async ($, on) => {
+    mock.clock(on, { now: NOW })
+    const full = { tokens: 950_000, window: 1_000_000, percent: 95 }
+    on('session.usage', () => ({ value: { ...USAGE, context: full } }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await ui.find({ key: 'context' }))?.text).toContain('↯ Ctx95%')
+    expect((await ui.find({ key: 'context' }))?.text).toContain('Compact soon')
+  })
+
   test('draws nothing off a subscription with no cost', async ($, on) => {
     mock.clock(on, { now: NOW })
-    on('session.usage', () => ({ value: { ...USAGE, rateLimits: [], cost: undefined } }))
+    on('session.usage', () => ({ value: { ...USAGE, context: { window: 1_000_000 }, rateLimits: [], cost: undefined } }))
     on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(120) })
