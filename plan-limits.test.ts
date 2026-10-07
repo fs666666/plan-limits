@@ -74,6 +74,17 @@ describe('plan-limits', () => {
     })
   }
 
+  test('alone in the band it draws no divider', async ($, on) => {
+    mock.clock(on, { now: NOW })
+    on('session.usage', () => ({ value: USAGE }))
+    // What the engine answers when no other mod draws in the band
+    on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine' as const, ref: 0 }))
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect(await ui.drawn()).toMatchObject({ type: 'Box', props: { key: 'plan-limits' } })
+    expect(await ui.find({ type: 'Text', text: '│' })).toBeUndefined()
+  })
+
   test('a narrow band keeps only the percents', async ($, on) => {
     mock.clock(on, { now: NOW })
     on('session.usage', () => ({ value: USAGE }))

@@ -64,9 +64,11 @@ function sortLimits(limits: SessionRateLimit[]): SessionRateLimit[] {
   return [...limits].sort((a, b) => rank(a.kind) - rank(b.kind))
 }
 
-// With no other mod drawing in the band, the engine hands back an empty Box
+// Whether the mods after this one left the band empty. With none drawing there, next(e)
+// resolves to the engine's own drawing, { type: 'engine' }, and in the band the engine
+// draws nothing; an empty Box is nothing too.
 function isEmpty(el: RenderElement | null | undefined): boolean {
-  if (!el) return true
+  if (!el || el.type === 'engine') return true
   const children = (el as { children?: unknown[] }).children
   return el.type === 'Box' && (!children || children.length === 0)
 }
