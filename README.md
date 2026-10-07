@@ -35,8 +35,11 @@ claude plugin install plan-limits@plan-limits
 改完代码后，把 `.claude-plugin/plugin.json` 里的 `version` 加一，提交并推送。各台设备运行：
 
 ```bash
-claude plugin marketplace update plan-limits
+claude plugin marketplace update plan-limits      # 拉取市场的最新清单
+claude plugin update plan-limits@plan-limits      # 把已安装的插件升级到新版本
 ```
+
+只运行第一条不会升级已安装的插件。升级后重启 Claude Code，或者在会话里运行 `/reload-plugins`。
 
 ## 开发
 
