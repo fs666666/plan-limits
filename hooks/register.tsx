@@ -39,8 +39,14 @@ function short(n: number): string {
   return String(n)
 }
 
-function bar(percent: number): string {
-  const filled = Math.max(0, Math.min(BAR_CELLS, Math.round((percent / 100) * BAR_CELLS)))
+// Everything is shown as what is left, like a battery: the weather still follows what is used,
+// so less left reads as worse weather.
+function leftOf(used: number): number {
+  return Math.max(0, Math.round((100 - used) * 10) / 10)
+}
+
+function bar(left: number): string {
+  const filled = Math.max(0, Math.min(BAR_CELLS, Math.round((left / 100) * BAR_CELLS)))
   return '█'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
 }
 
@@ -90,7 +96,7 @@ function widthOf(node: unknown): number {
   return width
 }
 
-// One gauge on the line: the context window or a rate-limit window
+// One gauge on the line: the context window or a rate-limit window; percent is how much is used
 type Gauge = { key: string; label: string; percent: number; fullWord?: string; reset?: string; size?: string }
 
 // How much each window shows, from most to least, picked by what fits on the line
@@ -143,14 +149,15 @@ export const register: Register = on => {
     const ours = (detail: Detail) => {
       const items = gauges.map(g => {
         const f = forecastOf(g.percent, g.fullWord)
+        const left = leftOf(g.percent)
         const reset = detail === 'minimal' ? '' : g.reset
         return (
           <Box key={g.key} flexDirection="row" columnGap={1}>
             {/* A trailing space here and after ↻: many terminals draw these symbols two columns wide */}
             <Text color={f.color}>{`${f.icon} `}</Text>
             <Text bold>{g.label}</Text>
-            <Text color={f.color} bold={f.isAlarm}>{`${g.percent}%`}</Text>
-            {detail === 'full' ? <Text color={f.color}>{bar(g.percent)}</Text> : null}
+            <Text color={f.color} bold={f.isAlarm}>{`${left}% left`}</Text>
+            {detail === 'full' ? <Text color={f.color}>{bar(left)}</Text> : null}
             {detail === 'full' ? <Text color={f.color} bold={f.isAlarm}>{f.word}</Text> : null}
             {detail === 'full' && g.size ? <Text dimColor>{g.size}</Text> : null}
             {reset ? (

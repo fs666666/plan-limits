@@ -42,18 +42,18 @@ describe('plan-limits', () => {
 
       const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(200) })
 
-      // 5h comes before Week; past 90% is red and reads Limit soon
+      // Shown as what is left; 5h comes before Week; under 10% left is red and reads Limit soon
       const five = await ui.find({ key: 'five_hour' })
       const week = await ui.find({ key: 'seven_day' })
-      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34%███░░░░░░░Cloudy340k/1M')
-      expect(five?.text).toContain('↯ 5h92.5%')
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx66% left███████░░░Cloudy340k/1M')
+      expect(five?.text).toContain('↯ 5h7.5% left')
       expect(five?.text).toContain('Limit soon')
       expect(five?.text).toContain('resets 22:13')
-      expect(week?.text).toContain('☀ Week18%')
+      expect(week?.text).toContain('☀ Week82% left')
       expect(week?.text).toContain('Clear')
       expect(week?.text).toContain('resets Sun 00:00')
       expect((await ui.find({ key: 'cost' }))?.text).toBe('Session$1.23')
-      expect(await ui.find({ type: 'Text', text: '92.5%' })).toMatchObject({ props: { color: 'red' } })
+      expect(await ui.find({ type: 'Text', text: '7.5% left' })).toMatchObject({ props: { color: 'red' } })
     })
 
     test(`beside token-weather it shares one line and drops detail to fit (${surface})`, async ($, on) => {
@@ -70,7 +70,7 @@ describe('plan-limits', () => {
       expect(five?.text).not.toContain('Limit soon')
       expect((await ui.find({ key: 'seven_day' }))?.text).toContain('↻ Sun 00:00')
       expect((await ui.find({ key: 'cost' }))?.text).toBe('$1.23')
-      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34%')
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx66% left')
     })
   }
 
@@ -91,7 +91,7 @@ describe('plan-limits', () => {
     on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
-    expect((await ui.find({ key: 'five_hour' }))?.text).toBe('↯ 5h92.5%')
+    expect((await ui.find({ key: 'five_hour' }))?.text).toBe('↯ 5h7.5% left')
   })
 
   test('a 5-hour reset past midnight carries its weekday', async ($, on) => {
@@ -111,7 +111,7 @@ describe('plan-limits', () => {
     on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
-    expect((await ui.find({ key: 'context' }))?.text).toContain('↯ Ctx95%')
+    expect((await ui.find({ key: 'context' }))?.text).toContain('↯ Ctx5% left')
     expect((await ui.find({ key: 'context' }))?.text).toContain('Compact soon')
   })
 

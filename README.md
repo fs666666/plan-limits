@@ -1,18 +1,20 @@
 # plan-limits
 
-一个 Claude Code mod：在输入框上方用天气图标显示上下文窗口的占用，以及订阅的 5 小时和每周额度（已用百分比、重置时间，用本机时间），还有本会话按 API 价格算的费用。
+一个 Claude Code mod：在输入框上方用天气图标显示上下文窗口和订阅的 5 小时、每周额度**还剩多少**，以及额度的重置时间（本机时间）和本会话按 API 价格算的费用。
 
 ```
-☁  Ctx 34%   ☁  5h 43% ↻ 22:13   ☁  Week 34% ↻ Thu 11:00   $15.98
+☁  Ctx 66% left   ☁  5h 57% left ↻ 22:13   ☁  Week 66% left ↻ Thu 11:00   $15.98
 ```
 
-| 已用 | 显示 |
+百分比都是剩余量，进度条也是剩余量（像电池，满格表示还剩很多）。剩得越少，天气越差：
+
+| 剩余 | 显示 |
 | --- | --- |
-| ≤25% | ☀ Clear |
-| ≤50% | ☁ Cloudy |
-| ≤75% | ☂ Showers |
-| ≤90% | ☇ Storm |
-| 90% 以上 | ↯ Limit soon（红色）；上下文显示为 Compact soon，表示快要自动压缩 |
+| 75% 以上 | ☀ Clear |
+| 50%–75% | ☁ Cloudy |
+| 25%–50% | ☂ Showers |
+| 10%–25% | ☇ Storm |
+| 10% 以下 | ↯ Limit soon（红色）；上下文显示为 Compact soon，表示快要自动压缩 |
 
 - 5 小时额度的重置时间在今天时只显示时间（`22:13`），跨过午夜会带上星期（`Thu 01:30`）；每周额度总是带星期。
 - 和 [token-weather](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/token-weather) 一起装时，两者并排在同一行。终端宽度不够时自动减少细节：先去掉进度条和天气文字，再去掉重置时间。
