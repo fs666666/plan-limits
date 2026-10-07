@@ -183,7 +183,8 @@ export const register: Register = on => {
       if (cost !== undefined) {
         items.push(
           <Box key="cost" flexDirection="row" columnGap={1}>
-            {detail === 'full' ? <Text dimColor>Session</Text> : null}
+            {/* Always labelled: a bare dollar figure reads as nothing in particular */}
+            <Text dimColor>Session</Text>
             <Text>{`$${cost.usd.toFixed(2)}`}</Text>
           </Box>,
         )

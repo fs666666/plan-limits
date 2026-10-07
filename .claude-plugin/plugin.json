@@ -1,6 +1,6 @@
 {
   "name": "plan-limits",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A weather forecast for your context window and your plan's 5-hour and weekly limits, with reset times and this session's cost, above the prompt",
   "author": {
     "name": "zer"

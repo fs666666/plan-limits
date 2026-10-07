@@ -61,7 +61,7 @@ describe('plan-limits', () => {
       on('session.usage', () => ({ value: USAGE }))
       on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
 
-      const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(170) })
+      const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(180) })
 
       expect(await ui.drawn()).toMatchObject({ type: 'Box', props: { flexDirection: 'row' } })
       expect(await ui.find({ type: 'Text', text: /Cloudy/ })).toBeDefined()
@@ -69,7 +69,7 @@ describe('plan-limits', () => {
       expect(five?.text).toContain('↻ 22:13')
       expect(five?.text).not.toContain('Limit soon')
       expect((await ui.find({ key: 'seven_day' }))?.text).toContain('↻ Sun 00:00')
-      expect((await ui.find({ key: 'cost' }))?.text).toBe('$1.23')
+      expect((await ui.find({ key: 'cost' }))?.text).toBe('Session$1.23')
       expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34% used')
     })
   }
