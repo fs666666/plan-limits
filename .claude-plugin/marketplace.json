@@ -1,0 +1,12 @@
+{
+  "name": "plan-limits",
+  "owner": { "name": "zer" },
+  "metadata": { "description": "plan-limits: your Claude plan's rate limits as a weather forecast above the prompt" },
+  "plugins": [
+    {
+      "name": "plan-limits",
+      "source": "./",
+      "description": "A weather forecast for your plan's 5-hour and weekly limits, with reset times and this session's cost, above the prompt"
+    }
+  ]
+}
