@@ -28,7 +28,7 @@ claude plugin marketplace add fs666666/plan-limits
 claude plugin install plan-limits@plan-limits
 ```
 
-仓库是私有的，设备上的 git 需要能访问它（比如已经 `gh auth login`）。装好后在会话里运行 `/reload-plugins`，或者重启 Claude Code。
+装好后在会话里运行 `/reload-plugins`，或者重启 Claude Code。
 
 ## 更新
 
