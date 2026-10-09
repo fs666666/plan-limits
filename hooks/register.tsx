@@ -52,17 +52,32 @@ function bar(percent: number): string {
   return '█'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
 }
 
-// The bar's stand-in where the line has no room for it: five phases of a filling moon,
-// following the shown value as the bar does. Emoji, so they read at the weather icon's size
-// and every terminal draws them two columns wide; they keep their own colours.
-const RINGS = ['🌑', '🌒', '🌓', '🌔', '🌕'] as const
+// The bar's stand-in where the line has no room for it, following the shown value as the bar
+// does, in the style the ringStyle option picks:
+// - nerd: Nerd Font circle slices, nine steps, take the forecast's colour (needs a Nerd Font)
+// - moon: moon-phase emoji, five steps, at the weather icon's size but in their own colours
+// - circle: plain Unicode quarter circles, five steps, take the colour, but small in most fonts
+type RingStyle = 'nerd' | 'moon' | 'circle'
+const RINGS: Record<RingStyle, readonly string[]> = {
+  nerd: ['\u{F0766}', '\u{F0A9E}', '\u{F0A9F}', '\u{F0AA0}', '\u{F0AA1}', '\u{F0AA2}', '\u{F0AA3}', '\u{F0AA4}', '\u{F0AA5}'],
+  moon: ['🌑', '🌒', '🌓', '🌔', '🌕'],
+  circle: ['○', '◔', '◑', '◕', '●'],
+}
+// Emoji take their own colours and every terminal draws them two columns wide
+const COLOURED: Record<RingStyle, boolean> = { nerd: true, moon: false, circle: true }
 
-function ring(percent: number): string {
-  const step = Math.max(0, Math.min(RINGS.length - 1, Math.round(percent / 25)))
-  return RINGS[step]!
+function ringStyleOf(value: unknown): RingStyle {
+  // Moon unless asked otherwise: emoji draw in every terminal, Nerd Font glyphs only with that font
+  return value === 'nerd' || value === 'circle' ? value : 'moon'
 }
 
-const WEEKDAYS =['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+function ring(style: RingStyle, percent: number): string {
+  const steps = RINGS[style]
+  const step = Math.round((percent / 100) * (steps.length - 1))
+  return steps[Math.max(0, Math.min(steps.length - 1, step))]!
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const pad = (n: number) => String(n).padStart(2, '0')
 
 // The reset as a local time (the environment keeps the machine's time zone): 22:13 when it
@@ -94,7 +109,7 @@ function isEmpty(el: RenderElement | null | undefined): boolean {
 // Roughly how many columns a tree takes on one line: its texts, plus a row's gaps and padding.
 // The weather and reset symbols count two columns: many terminals draw them as wide emoji, and
 // overestimating only costs a little detail, while underestimating wraps the line.
-const WIDE = new Set(['☀', '☁', '☂', '☇', '↯', '↻', ...RINGS])
+const WIDE = new Set(['☀', '☁', '☂', '☇', '↯', '↻', ...RINGS.moon])
 
 function textWidth(s: string): number {
   let width = 0
@@ -132,7 +147,9 @@ type Gauge = {
 type Detail = 'full' | 'compact' | 'minimal'
 const DETAILS: Detail[] = ['full', 'compact', 'minimal']
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const ringStyle = ringStyleOf(options.ringStyle)
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     // Redraw once a minute; a reload stops the old timer by itself
@@ -187,7 +204,12 @@ export const register: Register = on => {
             {/* A trailing space here and after ↻: many terminals draw these symbols two columns wide */}
             <Text color={f.color}>{`${f.icon} `}</Text>
             <Text bold>{g.label}</Text>
-            {detail === 'full' ? null : <Text>{ring(shown)}</Text>}
+            {detail === 'full' ? null : COLOURED[ringStyle] ? (
+              // Trailing space as for the icon: a glyph may draw wider than its one column
+              <Text color={f.color}>{`${ring(ringStyle, shown)} `}</Text>
+            ) : (
+              <Text>{ring(ringStyle, shown)}</Text>
+            )}
             <Text color={f.color} bold={f.isAlarm}>{`${shown}% ${g.shows}`}</Text>
             {detail === 'full' ? <Text color={f.color}>{bar(shown)}</Text> : null}
             {detail === 'full' ? <Text color={f.color} bold={f.isAlarm}>{f.word}</Text> : null}

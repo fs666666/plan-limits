@@ -105,19 +105,45 @@ describe('plan-limits', () => {
     expect((await ui.find({ key: 'seven_day' }))?.text).not.toMatch(/[🌑🌒🌓🌔🌕]/u)
   })
 
-  test('the ring fills in quarters of the shown value', async ($, on) => {
+  const LIMITS = [
+    { kind: 'five_hour', percentUsed: 50 },
+    { kind: 'seven_day', percentUsed: 0 },
+  ]
+  const RING_USAGE = { ...USAGE, context: { tokens: 800_000, window: 1_000_000, percent: 80 }, rateLimits: LIMITS }
+
+  test('nerd rings fill in eighths and take the forecast colour', { options: { ringStyle: 'nerd' } }, async ($, on) => {
     mock.clock(on, { now: NOW })
-    const limits = [
-      { kind: 'five_hour', percentUsed: 50 },
-      { kind: 'seven_day', percentUsed: 0 },
-    ]
-    on('session.usage', () => ({ value: { ...USAGE, context: { tokens: 800_000, window: 1_000_000, percent: 80 }, rateLimits: limits } }))
+    on('session.usage', () => ({ value: RING_USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
+    expect((await ui.find({ key: 'context' }))?.text).toContain('Ctx\u{F0AA3} 80% used')
+    expect((await ui.find({ key: 'five_hour' }))?.text).toContain('5h\u{F0AA1} 50% left')
+    expect((await ui.find({ key: 'seven_day' }))?.text).toContain('Week\u{F0AA5} 100% left')
+    expect(await ui.find({ type: 'Text', text: '\u{F0AA3} ' })).toMatchObject({ props: { color: 'magenta' } })
+  })
+
+  test('moon rings, the default, fill in quarters in their own colours', async ($, on) => {
+    mock.clock(on, { now: NOW })
+    on('session.usage', () => ({ value: RING_USAGE }))
     on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
     expect((await ui.find({ key: 'context' }))?.text).toContain('Ctx🌔80% used')
     expect((await ui.find({ key: 'five_hour' }))?.text).toContain('5h🌓50% left')
     expect((await ui.find({ key: 'seven_day' }))?.text).toContain('Week🌕100% left')
+    expect((await ui.find({ type: 'Text', text: '🌔' }))?.props?.color).toBeUndefined()
+  })
+
+  test('circle rings fill in quarters and take the forecast colour', { options: { ringStyle: 'circle' } }, async ($, on) => {
+    mock.clock(on, { now: NOW })
+    on('session.usage', () => ({ value: RING_USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
+    expect((await ui.find({ key: 'context' }))?.text).toContain('Ctx◕ 80% used')
+    expect((await ui.find({ key: 'five_hour' }))?.text).toContain('5h◑ 50% left')
+    expect(await ui.find({ type: 'Text', text: '● ' })).toMatchObject({ props: { color: 'yellow' } })
   })
 
   test('a 5-hour reset past midnight carries its weekday', async ($, on) => {
