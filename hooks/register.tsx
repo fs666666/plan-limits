@@ -52,7 +52,17 @@ function bar(percent: number): string {
   return '█'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// The bar's stand-in where the line has no room for it: five phases of a filling moon,
+// following the shown value as the bar does. Emoji, so they read at the weather icon's size
+// and every terminal draws them two columns wide; they keep their own colours.
+const RINGS = ['🌑', '🌒', '🌓', '🌔', '🌕'] as const
+
+function ring(percent: number): string {
+  const step = Math.max(0, Math.min(RINGS.length - 1, Math.round(percent / 25)))
+  return RINGS[step]!
+}
+
+const WEEKDAYS =['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const pad = (n: number) => String(n).padStart(2, '0')
 
 // The reset as a local time (the environment keeps the machine's time zone): 22:13 when it
@@ -82,9 +92,18 @@ function isEmpty(el: RenderElement | null | undefined): boolean {
 }
 
 // Roughly how many columns a tree takes on one line: its texts, plus a row's gaps and padding.
-// Every symbol used here is one column wide, so a string's length is its width.
+// The weather and reset symbols count two columns: many terminals draw them as wide emoji, and
+// overestimating only costs a little detail, while underestimating wraps the line.
+const WIDE = new Set(['☀', '☁', '☂', '☇', '↯', '↻', ...RINGS])
+
+function textWidth(s: string): number {
+  let width = 0
+  for (const ch of s) width += WIDE.has(ch) ? 2 : 1
+  return width
+}
+
 function widthOf(node: unknown): number {
-  if (typeof node === 'string' || typeof node === 'number') return String(node).length
+  if (typeof node === 'string' || typeof node === 'number') return textWidth(String(node))
   if (!node || typeof node !== 'object') return 0
   const el = node as { type?: string; props?: Record<string, unknown>; children?: unknown[] }
   const children = (el.children ?? []).filter(c => c !== null && c !== undefined && c !== false)
@@ -168,6 +187,7 @@ export const register: Register = on => {
             {/* A trailing space here and after ↻: many terminals draw these symbols two columns wide */}
             <Text color={f.color}>{`${f.icon} `}</Text>
             <Text bold>{g.label}</Text>
+            {detail === 'full' ? null : <Text>{ring(shown)}</Text>}
             <Text color={f.color} bold={f.isAlarm}>{`${shown}% ${g.shows}`}</Text>
             {detail === 'full' ? <Text color={f.color}>{bar(shown)}</Text> : null}
             {detail === 'full' ? <Text color={f.color} bold={f.isAlarm}>{f.word}</Text> : null}

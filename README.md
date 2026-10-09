@@ -17,7 +17,7 @@
 | 90% 以上 | 10% 以下 | ↯ 红色：上下文显示 Compact soon（快要自动压缩），额度显示 Limit soon |
 
 - 5 小时额度的重置时间在今天时只显示时间（`22:13`），跨过午夜会带上星期（`Thu 01:30`）；每周额度总是带星期。
-- 和 [token-weather](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/token-weather) 一起装时，两者并排在同一行。终端宽度不够时自动减少细节：先去掉进度条和天气文字，再去掉重置时间。
+- 和 [token-weather](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/token-weather) 一起装时，两者并排在同一行。终端宽度不够时自动减少细节：先把进度条和天气文字换成月相（🌑🌒🌓🌔🌕，按显示的值每 25% 一档，越满数值越大），再去掉重置时间。
 - 终端够宽时，上下文还会显示进度条和 `340k/1M` 这样的用量。
 - `Session $15.98` 是本会话按 API 价格折算的费用，和 `/cost` 显示的一样。订阅用户不会真的被扣这笔钱，只是参考值。
 - 额度数据只在订阅账号登录、且会话收到过第一次回复后才有。

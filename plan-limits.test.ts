@@ -61,7 +61,7 @@ describe('plan-limits', () => {
       on('session.usage', () => ({ value: USAGE }))
       on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
 
-      const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(180) })
+      const ui = await $.ui.mount({ plugin: 'plan-limits', surface, component: 'AbovePrompt', props: props(190) })
 
       expect(await ui.drawn()).toMatchObject({ type: 'Box', props: { flexDirection: 'row' } })
       expect(await ui.find({ type: 'Text', text: /Cloudy/ })).toBeDefined()
@@ -70,7 +70,9 @@ describe('plan-limits', () => {
       expect(five?.text).not.toContain('Limit soon')
       expect((await ui.find({ key: 'seven_day' }))?.text).toContain('↻ Sun 00:00')
       expect((await ui.find({ key: 'cost' }))?.text).toBe('Session$1.23')
-      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx34% used')
+      // No bar here, so each window carries a ring instead
+      expect((await ui.find({ key: 'context' }))?.text).toBe('☁ Ctx🌒34% used')
+      expect(five?.text).toContain('↯ 5h🌑7.5% left')
     })
   }
 
@@ -91,7 +93,31 @@ describe('plan-limits', () => {
     on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
-    expect((await ui.find({ key: 'five_hour' }))?.text).toBe('↯ 5h7.5% left')
+    expect((await ui.find({ key: 'five_hour' }))?.text).toBe('↯ 5h🌑7.5% left')
+  })
+
+  test('a wide band draws the bar and no ring', async ($, on) => {
+    mock.clock(on, { now: NOW })
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await ui.find({ key: 'seven_day' }))?.text).not.toMatch(/[🌑🌒🌓🌔🌕]/u)
+  })
+
+  test('the ring fills in quarters of the shown value', async ($, on) => {
+    mock.clock(on, { now: NOW })
+    const limits = [
+      { kind: 'five_hour', percentUsed: 50 },
+      { kind: 'seven_day', percentUsed: 0 },
+    ]
+    on('session.usage', () => ({ value: { ...USAGE, context: { tokens: 800_000, window: 1_000_000, percent: 80 }, rateLimits: limits } }))
+    on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
+    expect((await ui.find({ key: 'context' }))?.text).toContain('Ctx🌔80% used')
+    expect((await ui.find({ key: 'five_hour' }))?.text).toContain('5h🌓50% left')
+    expect((await ui.find({ key: 'seven_day' }))?.text).toContain('Week🌕100% left')
   })
 
   test('a 5-hour reset past midnight carries its weekday', async ($, on) => {
