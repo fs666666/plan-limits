@@ -146,6 +146,16 @@ describe('plan-limits', () => {
     expect(await ui.find({ type: 'Text', text: '● ' })).toMatchObject({ props: { color: 'yellow' } })
   })
 
+  test('none draws no ring', { options: { ringStyle: 'none' } }, async ($, on) => {
+    mock.clock(on, { now: NOW })
+    on('session.usage', () => ({ value: RING_USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => WEATHER)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(100) })
+    expect((await ui.find({ key: 'context' }))?.text).toBe('☇ Ctx80% used')
+    expect((await ui.find({ key: 'five_hour' }))?.text).toBe('☁ 5h50% left')
+  })
+
   test('a 5-hour reset past midnight carries its weekday', async ($, on) => {
     mock.clock(on, { now: NOW })
     const late = { kind: 'five_hour', percentUsed: 40, resetsAt: new Date(2026, 9, 8, 1, 30).toISOString() }

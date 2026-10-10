@@ -1,6 +1,6 @@
 {
   "name": "plan-limits",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A weather forecast for your context window and your plan's 5-hour and weekly limits, with reset times and this session's cost, above the prompt",
   "author": {
     "name": "zer"
@@ -9,12 +9,13 @@
     "ringStyle": {
       "type": "string",
       "title": "Ring style",
-      "description": "The symbol that stands in for the bar on a narrow line: nerd is Nerd Font circle slices in the forecast's colour (needs a Nerd Font), moon is moon-phase emoji in their own colours, circle is plain Unicode quarter circles in the forecast's colour.",
+      "description": "The symbol that stands in for the bar on a narrow line: nerd is Nerd Font circle slices in the forecast's colour (needs a Nerd Font), moon is moon-phase emoji in their own colours, circle is plain Unicode quarter circles in the forecast's colour, none shows no ring.",
       "default": "moon",
       "options": [
-        "nerd",
         "moon",
-        "circle"
+        "nerd",
+        "circle",
+        "none"
       ]
     }
   }

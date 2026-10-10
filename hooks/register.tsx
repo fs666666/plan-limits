@@ -57,21 +57,23 @@ function bar(percent: number): string {
 // - nerd: Nerd Font circle slices, nine steps, take the forecast's colour (needs a Nerd Font)
 // - moon: moon-phase emoji, five steps, at the weather icon's size but in their own colours
 // - circle: plain Unicode quarter circles, five steps, take the colour, but small in most fonts
-type RingStyle = 'nerd' | 'moon' | 'circle'
-const RINGS: Record<RingStyle, readonly string[]> = {
+// - none: no ring, the narrow line keeps only the percents
+type RingStyle = 'nerd' | 'moon' | 'circle' | 'none'
+type RingGlyphs = Exclude<RingStyle, 'none'>
+const RINGS: Record<RingGlyphs, readonly string[]> = {
   nerd: ['\u{F0766}', '\u{F0A9E}', '\u{F0A9F}', '\u{F0AA0}', '\u{F0AA1}', '\u{F0AA2}', '\u{F0AA3}', '\u{F0AA4}', '\u{F0AA5}'],
   moon: ['🌑', '🌒', '🌓', '🌔', '🌕'],
   circle: ['○', '◔', '◑', '◕', '●'],
 }
 // Emoji take their own colours and every terminal draws them two columns wide
-const COLOURED: Record<RingStyle, boolean> = { nerd: true, moon: false, circle: true }
+const COLOURED: Record<RingGlyphs, boolean> = { nerd: true, moon: false, circle: true }
 
 function ringStyleOf(value: unknown): RingStyle {
   // Moon unless asked otherwise: emoji draw in every terminal, Nerd Font glyphs only with that font
-  return value === 'nerd' || value === 'circle' ? value : 'moon'
+  return value === 'nerd' || value === 'circle' || value === 'none' ? value : 'moon'
 }
 
-function ring(style: RingStyle, percent: number): string {
+function ring(style: RingGlyphs, percent: number): string {
   const steps = RINGS[style]
   const step = Math.round((percent / 100) * (steps.length - 1))
   return steps[Math.max(0, Math.min(steps.length - 1, step))]!
@@ -204,7 +206,7 @@ export const register: Register = (on, options) => {
             {/* A trailing space here and after ↻: many terminals draw these symbols two columns wide */}
             <Text color={f.color}>{`${f.icon} `}</Text>
             <Text bold>{g.label}</Text>
-            {detail === 'full' ? null : COLOURED[ringStyle] ? (
+            {detail === 'full' || ringStyle === 'none' ? null : COLOURED[ringStyle] ? (
               // Trailing space as for the icon: a glyph may draw wider than its one column
               <Text color={f.color}>{`${ring(ringStyle, shown)} `}</Text>
             ) : (
