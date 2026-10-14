@@ -1,12 +1,16 @@
 // Plan limits band: a weather forecast for the context window and the plan's 5-hour and weekly
-// rate-limit windows, with each window's reset time and this session's API-equivalent cost,
-// above the prompt.
+// rate-limit windows, with each window's reset time, this session's API-equivalent cost and
+// the output speed of the last response, above the prompt.
 //
 // The figures are $.session.usage()'s, the same the status line has: context once a response
 // reported its fill; rateLimits only on a subscription and after the first response; cost is
 // Claude Code's own estimate at API prices (what /cost shows). session.measure pushes a redraw
 // when any of them moves; a one-minute timer redraws so a 5-hour reset gains its weekday after
 // midnight.
+//
+// The speed is the last main-loop response's output tokens over the time from its first streamed
+// chunk to its stop chunk, so the wait before the first token does not count. Thinking the
+// terminal does not show is in output_tokens and in that time too, so the figure stays honest.
 import type { RenderElement, Register, SessionRateLimit } from 'claude-code'
 
 const NAMES: Record<string, string> = {
@@ -26,6 +30,9 @@ const FORECAST = [
 ] as const
 
 const BAR_CELLS = 10
+
+// Shorter responses than this give a speed that is mostly noise; the last good one stays
+const MIN_SPEED_MS = 300
 
 // The last band's word, per gauge: a full context window gets compacted, a full limit stops you
 function forecastOf(percent: number, fullWord = 'Limit soon') {
@@ -111,7 +118,7 @@ function isEmpty(el: RenderElement | null | undefined): boolean {
 // Roughly how many columns a tree takes on one line: its texts, plus a row's gaps and padding.
 // The weather and reset symbols count two columns: many terminals draw them as wide emoji, and
 // overestimating only costs a little detail, while underestimating wraps the line.
-const WIDE = new Set(['☀', '☁', '☂', '☇', '↯', '↻', ...RINGS.moon])
+const WIDE = new Set(['☀', '☁', '☂', '☇', '↯', '↻', '⚡', ...RINGS.moon])
 
 function textWidth(s: string): number {
   let width = 0
@@ -151,6 +158,31 @@ const DETAILS: Detail[] = ['full', 'compact', 'minimal']
 
 export const register: Register = (on, options) => {
   const ringStyle = ringStyleOf(options.ringStyle)
+  // Each item on the line can be turned off in /config; unset reads as on
+  const shows = (key: string) => options[key] !== false
+  const showContext = shows('showContext')
+  const showCost = shows('showCost')
+  const showSpeed = shows('showSpeed')
+  const SHOW_LIMIT: Record<string, boolean> = { five_hour: shows('showFiveHour'), seven_day: shows('showWeek') }
+  // Output tokens per second of the last main-loop response; a reload starts it over
+  let tokensPerSecond: number | undefined
+
+  // Time each main-loop response as it streams; subagents stream alongside and are left out
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId || !showSpeed) return yield* next(e)
+    let firstAt: number | undefined
+    for await (const chunk of next(e)) {
+      if (firstAt === undefined) firstAt = await $.clock.now()
+      if (chunk.kind === 'stop' && chunk.usage) {
+        const ms = (await $.clock.now()) - firstAt
+        if (ms >= MIN_SPEED_MS && chunk.usage.output_tokens > 0) {
+          tokensPerSecond = chunk.usage.output_tokens / (ms / 1000)
+          $.ui.invalidate('ui.render')
+        }
+      }
+      yield chunk
+    }
+  })
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -172,7 +204,7 @@ export const register: Register = (on, options) => {
 
     const gauges: Gauge[] = []
     // The context window has a fill once a response reported one
-    if (context.window > 0 && (context.percent !== undefined || (context.tokens ?? 0) > 0)) {
+    if (showContext && context.window > 0 && (context.percent !== undefined || (context.tokens ?? 0) > 0)) {
       const tokens = context.tokens ?? 0
       gauges.push({
         key: 'context',
@@ -183,7 +215,8 @@ export const register: Register = (on, options) => {
         size: `${short(tokens)}/${short(context.window)}`,
       })
     }
-    for (const limit of sortLimits(rateLimits)) {
+    // A window with no switch of its own (a gateway's spend limit) is always shown
+    for (const limit of sortLimits(rateLimits.filter(l => SHOW_LIMIT[l.kind] !== false))) {
       gauges.push({
         key: limit.kind,
         label: NAMES[limit.kind] ?? limit.kind,
@@ -192,7 +225,9 @@ export const register: Register = (on, options) => {
         reset: resetText(limit, now),
       })
     }
-    if (gauges.length === 0 && cost === undefined) return next(e)
+    const shownCost = showCost ? cost : undefined
+    const speed = showSpeed ? tokensPerSecond : undefined
+    if (gauges.length === 0 && shownCost === undefined && speed === undefined) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)
 
@@ -224,12 +259,21 @@ export const register: Register = (on, options) => {
           </Box>
         )
       })
-      if (cost !== undefined) {
+      if (shownCost !== undefined) {
         items.push(
           <Box key="cost" flexDirection="row" columnGap={1}>
             {/* Always labelled: a bare dollar figure reads as nothing in particular */}
             <Text dimColor>Session</Text>
-            <Text>{`$${cost.usd.toFixed(2)}`}</Text>
+            <Text>{`$${shownCost.usd.toFixed(2)}`}</Text>
+          </Box>,
+        )
+      }
+      if (speed !== undefined) {
+        items.push(
+          <Box key="speed" flexDirection="row" columnGap={1}>
+            {/* An emoji: its own colour, two columns wide in every terminal */}
+            <Text>⚡</Text>
+            <Text>{`${Math.round(speed)} tps`}</Text>
           </Box>,
         )
       }

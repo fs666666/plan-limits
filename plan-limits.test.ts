@@ -177,6 +177,73 @@ describe('plan-limits', () => {
     expect((await ui.find({ key: 'context' }))?.text).toContain('Compact soon')
   })
 
+  // Model responses streamed beneath the plugin, each with its first chunk at `from` and its
+  // stop at `to`. The hooks beneath go on before the test first calls $, so they read `step`.
+  type Step = { from: number; to: number; outputTokens: number; agentId?: string }
+  function streamer(on: any) {
+    let now = NOW
+    let step: Step = { from: NOW, to: NOW, outputTokens: 0 }
+    on('clock.now', () => ({ value: now }))
+    on('turn.step', async function* () {
+      now = step.from
+      yield { kind: 'text', index: 0, text: 'Hello' }
+      now = step.to
+      const usage = { input_tokens: 10, output_tokens: step.outputTokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' }
+      yield { kind: 'stop', stopReason: 'end_turn', usage }
+      return { turnId: 't', index: 0, answer: 'Hello', toolUses: [], stopReason: 'end_turn', usage }
+    })
+    return async ($: any, next: Step) => {
+      step = next
+      const input = { turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...(next.agentId ? { agentId: next.agentId } : {}) }
+      for await (const _ of $.turn.step(input)) {
+        // read the stream to its end, as the engine does
+      }
+    }
+  }
+
+  test('shows the output speed of the last response', async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    // 300 tokens from the first chunk at +1s to the stop at +5s: 75 tps, the wait before it left out
+    await stream($, { from: NOW + 1_000, to: NOW + 5_000, outputTokens: 300 })
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await ui.find({ key: 'speed' }))?.text).toBe('⚡75 tps')
+  })
+
+  test('leaves subagent responses and very short ones out of the speed', async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    await stream($, { from: NOW, to: NOW + 4_000, outputTokens: 200, agentId: 'a1' })
+    await stream($, { from: NOW, to: NOW + 100, outputTokens: 20 })
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect(await ui.find({ key: 'speed' })).toBeUndefined()
+  })
+
+  const HIDE_ALL_BUT_WEEK = { showContext: false, showFiveHour: false, showCost: false, showSpeed: false }
+
+  test('each item can be turned off', { options: HIDE_ALL_BUT_WEEK }, async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    await stream($, { from: NOW, to: NOW + 4_000, outputTokens: 200 })
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect(await ui.find({ key: 'seven_day' })).toBeDefined()
+    for (const key of ['context', 'five_hour', 'cost', 'speed']) expect(await ui.find({ key })).toBeUndefined()
+  })
+
+  test('with every item off it draws nothing', { options: { ...HIDE_ALL_BUT_WEEK, showWeek: false } }, async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect(await ui.find({ key: 'plan-limits' })).toBeUndefined()
+  })
+
   test('draws nothing off a subscription with no cost', async ($, on) => {
     mock.clock(on, { now: NOW })
     on('session.usage', () => ({ value: { ...USAGE, context: { window: 1_000_000 }, rateLimits: [], cost: undefined } }))

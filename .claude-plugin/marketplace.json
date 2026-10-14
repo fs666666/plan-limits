@@ -10,7 +10,7 @@
     {
       "name": "plan-limits",
       "source": "./",
-      "description": "A weather forecast for your context window and your plan's 5-hour and weekly limits, with reset times and this session's cost, above the prompt"
+      "description": "A weather forecast for your context window and your plan's 5-hour and weekly limits, with reset times, this session's cost and the last response's output speed, above the prompt"
     }
   ]
 }
