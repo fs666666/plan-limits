@@ -11,6 +11,8 @@
 // The speed is the last main-loop response's output tokens over the time from its first streamed
 // chunk to its stop chunk, so the wait before the first token does not count. Thinking the
 // terminal does not show is in output_tokens and in that time too, so the figure stays honest.
+// While a response streams, a live estimate marked ~ stands in: the streamed text counted as
+// tokens by a rule of thumb, scaled by how far that rule was off on the responses before.
 import type { RenderElement, Register, SessionRateLimit } from 'claude-code'
 
 const NAMES: Record<string, string> = {
@@ -33,6 +35,17 @@ const BAR_CELLS = 10
 
 // Shorter responses than this give a speed that is mostly noise; the last good one stays
 const MIN_SPEED_MS = 300
+// The live estimate waits this long into a response before it shows, then redraws this often
+const LIVE_AFTER_MS = 1_000
+const LIVE_EVERY_MS = 500
+
+// Roughly how many tokens streamed text is: a CJK character about one, other text about four
+// characters to a token. Only a starting point: the scale learnt from finished responses corrects it.
+const CJK = /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g
+function estimateTokens(s: string): number {
+  const cjk = s.match(CJK)?.length ?? 0
+  return cjk + (s.length - cjk) / 4
+}
 
 // The last band's word, per gauge: a full context window gets compacted, a full limit stops you
 function forecastOf(percent: number, fullWord = 'Limit soon') {
@@ -164,23 +177,50 @@ export const register: Register = (on, options) => {
   const showCost = shows('showCost')
   const showSpeed = shows('showSpeed')
   const SHOW_LIMIT: Record<string, boolean> = { five_hour: shows('showFiveHour'), seven_day: shows('showWeek') }
-  // Output tokens per second of the last main-loop response; a reload starts it over
+  // Output tokens per second of the last main-loop response, and the live estimate while one
+  // streams; a reload starts both over
   let tokensPerSecond: number | undefined
+  let liveTokensPerSecond: number | undefined
+  // Real output tokens over estimated ones, averaged over finished responses: it takes in the
+  // language mix and the thinking the stream does not show
+  let scale = 1
 
   // Time each main-loop response as it streams; subagents stream alongside and are left out
   on('turn.step', async function* ($, e, next) {
     if (e.agentId || !showSpeed) return yield* next(e)
     let firstAt: number | undefined
-    for await (const chunk of next(e)) {
-      if (firstAt === undefined) firstAt = await $.clock.now()
-      if (chunk.kind === 'stop' && chunk.usage) {
-        const ms = (await $.clock.now()) - firstAt
-        if (ms >= MIN_SPEED_MS && chunk.usage.output_tokens > 0) {
-          tokensPerSecond = chunk.usage.output_tokens / (ms / 1000)
+    let drawnAt = 0
+    let estimated = 0
+    try {
+      for await (const chunk of next(e)) {
+        const now = await $.clock.now()
+        if (firstAt === undefined) firstAt = now
+        const ms = now - firstAt
+        if (chunk.kind === 'text' || chunk.kind === 'thinking') estimated += estimateTokens(chunk.text)
+        else if (chunk.kind === 'input') estimated += estimateTokens(chunk.json)
+
+        if (chunk.kind === 'stop') {
+          const output = chunk.usage?.output_tokens ?? 0
+          if (ms >= MIN_SPEED_MS && output > 0) tokensPerSecond = output / (ms / 1000)
+          // Too few to learn from: a tool call alone, a word or two
+          if (output > 0 && estimated >= 20) {
+            scale = Math.max(0.5, Math.min(4, 0.7 * scale + 0.3 * (output / estimated)))
+          }
+          liveTokensPerSecond = undefined
+          $.ui.invalidate('ui.render')
+        } else if (ms >= LIVE_AFTER_MS && now - drawnAt >= LIVE_EVERY_MS && estimated > 0) {
+          liveTokensPerSecond = (estimated * scale) / (ms / 1000)
+          drawnAt = now
           $.ui.invalidate('ui.render')
         }
+        yield chunk
       }
-      yield chunk
+    } finally {
+      // A response cut off before its stop leaves the last real figure, not a stale estimate
+      if (liveTokensPerSecond !== undefined) {
+        liveTokensPerSecond = undefined
+        $.ui.invalidate('ui.render')
+      }
     }
   })
 
@@ -226,7 +266,8 @@ export const register: Register = (on, options) => {
       })
     }
     const shownCost = showCost ? cost : undefined
-    const speed = showSpeed ? tokensPerSecond : undefined
+    const isLive = liveTokensPerSecond !== undefined
+    const speed = showSpeed ? liveTokensPerSecond ?? tokensPerSecond : undefined
     if (gauges.length === 0 && shownCost === undefined && speed === undefined) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)
@@ -273,7 +314,8 @@ export const register: Register = (on, options) => {
           <Box key="speed" flexDirection="row" columnGap={1}>
             {/* An emoji: its own colour, two columns wide in every terminal */}
             <Text>⚡</Text>
-            <Text>{`${Math.round(speed)} tps`}</Text>
+            {/* An estimate is marked ~ and dimmed until the response's own count replaces it */}
+            <Text dimColor={isLive}>{`${isLive ? '~' : ''}${Math.round(speed)} tps`}</Text>
           </Box>,
         )
       }

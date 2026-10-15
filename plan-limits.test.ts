@@ -177,28 +177,37 @@ describe('plan-limits', () => {
     expect((await ui.find({ key: 'context' }))?.text).toContain('Compact soon')
   })
 
-  // Model responses streamed beneath the plugin, each with its first chunk at `from` and its
-  // stop at `to`. The hooks beneath go on before the test first calls $, so they read `step`.
-  type Step = { from: number; to: number; outputTokens: number; agentId?: string }
+  // Model responses streamed beneath the plugin: a first text chunk at `from`, a second at `mid`
+  // (`from` when not given), each `chars` long (5 when not given), and the stop at `to`. The hooks
+  // beneath go on before the test first calls $, so they read `step`.
+  type Step = { from: number; mid?: number; to: number; outputTokens: number; chars?: number; agentId?: string }
   function streamer(on: any) {
     let now = NOW
     let step: Step = { from: NOW, to: NOW, outputTokens: 0 }
     on('clock.now', () => ({ value: now }))
     on('turn.step', async function* () {
+      const text = 'a'.repeat(step.chars ?? 5)
       now = step.from
-      yield { kind: 'text', index: 0, text: 'Hello' }
+      yield { kind: 'text', index: 0, text }
+      now = step.mid ?? step.from
+      yield { kind: 'text', index: 0, text }
       now = step.to
       const usage = { input_tokens: 10, output_tokens: step.outputTokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' }
       yield { kind: 'stop', stopReason: 'end_turn', usage }
-      return { turnId: 't', index: 0, answer: 'Hello', toolUses: [], stopReason: 'end_turn', usage }
+      return { turnId: 't', index: 0, answer: text + text, toolUses: [], stopReason: 'end_turn', usage }
     })
-    return async ($: any, next: Step) => {
+    // Starts a response and hands back its stream, to read chunk by chunk
+    const open = ($: any, next: Step) => {
       step = next
-      const input = { turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...(next.agentId ? { agentId: next.agentId } : {}) }
-      for await (const _ of $.turn.step(input)) {
-        // read the stream to its end, as the engine does
+      return $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...(next.agentId ? { agentId: next.agentId } : {}) })
+    }
+    // Streams a whole response, as the engine reads it
+    const stream = async ($: any, next: Step) => {
+      for await (const _ of open($, next)) {
+        // read to the end
       }
     }
+    return Object.assign(stream, { open })
   }
 
   test('shows the output speed of the last response', async ($, on) => {
@@ -218,6 +227,51 @@ describe('plan-limits', () => {
     const stream = streamer(on)
     await stream($, { from: NOW, to: NOW + 4_000, outputTokens: 200, agentId: 'a1' })
     await stream($, { from: NOW, to: NOW + 100, outputTokens: 20 })
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect(await ui.find({ key: 'speed' })).toBeUndefined()
+  })
+
+  test('while a response streams it shows a live estimate marked ~', async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    // 2 × 400 characters of English is about 200 tokens; 2s in, that reads 100 tps
+    const response = stream.open($, { from: NOW, mid: NOW + 2_000, to: NOW + 5_000, outputTokens: 400, chars: 400 })
+    await response.next()
+    await response.next()
+
+    const live = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await live.find({ key: 'speed' }))?.text).toBe('⚡~100 tps')
+    expect(await live.find({ type: 'Text', text: '~100 tps' })).toMatchObject({ props: { dimColor: true } })
+
+    // The stop's own count replaces it: 400 tokens over 5s
+    while (!(await response.next()).done) {}
+    const done = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await done.find({ key: 'speed' }))?.text).toBe('⚡80 tps')
+  })
+
+  test('the estimate learns from how far off it was', async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    // Estimated 200 tokens, really 400: the scale moves from 1 to 0.7 + 0.3 × 2 = 1.3
+    await stream($, { from: NOW, mid: NOW + 2_000, to: NOW + 5_000, outputTokens: 400, chars: 400 })
+    const response = stream.open($, { from: NOW + 10_000, mid: NOW + 12_000, to: NOW + 15_000, outputTokens: 400, chars: 400 })
+    await response.next()
+    await response.next()
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await ui.find({ key: 'speed' }))?.text).toBe('⚡~130 tps')
+  })
+
+  test('the estimate waits a second into a response before it shows', async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    const response = stream.open($, { from: NOW, mid: NOW + 500, to: NOW + 5_000, outputTokens: 400, chars: 400 })
+    await response.next()
+    await response.next()
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
     expect(await ui.find({ key: 'speed' })).toBeUndefined()
