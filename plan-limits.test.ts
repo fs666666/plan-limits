@@ -180,7 +180,8 @@ describe('plan-limits', () => {
   // Model responses streamed beneath the plugin: a first text chunk at `from`, a second at `mid`
   // (`from` when not given), each `chars` long (5 when not given), and the stop at `to`. The hooks
   // beneath go on before the test first calls $, so they read `step`.
-  type Step = { from: number; mid?: number; to: number; outputTokens: number; chars?: number; agentId?: string }
+  // `server` is a tool the API ran itself (the advisor) inside the response, from and to.
+  type Step = { from: number; mid?: number; to: number; outputTokens: number; chars?: number; agentId?: string; server?: [number, number] }
   function streamer(on: any) {
     let now = NOW
     let step: Step = { from: NOW, to: NOW, outputTokens: 0 }
@@ -194,7 +195,10 @@ describe('plan-limits', () => {
       now = step.to
       const usage = { input_tokens: 10, output_tokens: step.outputTokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' }
       yield { kind: 'stop', stopReason: 'end_turn', usage }
-      return { turnId: 't', index: 0, answer: text + text, toolUses: [], stopReason: 'end_turn', usage }
+      const serverToolUses = step.server
+        ? [{ id: 's1', name: 'advisor', input: {}, startedAt: step.server[0], endedAt: step.server[1] }]
+        : undefined
+      return { turnId: 't', index: 0, answer: text + text, toolUses: [], stopReason: 'end_turn', usage, ...(serverToolUses ? { serverToolUses } : {}) }
     })
     // Starts a response and hands back its stream, to read chunk by chunk
     const open = ($: any, next: Step) => {
@@ -216,6 +220,17 @@ describe('plan-limits', () => {
     const stream = streamer(on)
     // 300 tokens from the first chunk at +1s to the stop at +5s: 75 tps, the wait before it left out
     await stream($, { from: NOW + 1_000, to: NOW + 5_000, outputTokens: 300 })
+
+    const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
+    expect((await ui.find({ key: 'speed' }))?.text).toBe('⚡75 tps')
+  })
+
+  test('leaves the time a server tool ran out of the speed', async ($, on) => {
+    on('session.usage', () => ({ value: USAGE }))
+    on('ui.render', { component: 'AbovePrompt' }, () => EMPTY)
+    const stream = streamer(on)
+    // 300 tokens over 6s of stream, 2s of it the advisor running: 300 over 4s is 75 tps
+    await stream($, { from: NOW, to: NOW + 6_000, outputTokens: 300, server: [NOW + 1_000, NOW + 3_000] })
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(200) })
     expect((await ui.find({ key: 'speed' }))?.text).toBe('⚡75 tps')

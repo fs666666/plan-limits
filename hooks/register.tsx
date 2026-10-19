@@ -9,7 +9,8 @@
 // midnight.
 //
 // The speed is the last main-loop response's output tokens over the time from its first streamed
-// chunk to its stop chunk, so the wait before the first token does not count. Thinking the
+// chunk to its stop chunk, so the wait before the first token does not count, nor the time a tool
+// the API runs itself (the advisor) held the stream. Thinking the
 // terminal does not show is in output_tokens and in that time too, so the figure stays honest.
 // While a response streams, a live estimate marked ~ stands in: the streamed text counted as
 // tokens by a rule of thumb, scaled by how far that rule was off on the responses before.
@@ -189,10 +190,16 @@ export const register: Register = (on, options) => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId || !showSpeed) return yield* next(e)
     let firstAt: number | undefined
+    let stopAt: number | undefined
+    let output = 0
     let drawnAt = 0
     let estimated = 0
     try {
-      for await (const chunk of next(e)) {
+      // Read by hand, not for await: the stream's return value carries the server tool calls
+      const stream = next(e)
+      let step = await stream.next()
+      for (; !step.done; step = await stream.next()) {
+        const chunk = step.value
         const now = await $.clock.now()
         if (firstAt === undefined) firstAt = now
         const ms = now - firstAt
@@ -200,14 +207,8 @@ export const register: Register = (on, options) => {
         else if (chunk.kind === 'input') estimated += estimateTokens(chunk.json)
 
         if (chunk.kind === 'stop') {
-          const output = chunk.usage?.output_tokens ?? 0
-          if (ms >= MIN_SPEED_MS && output > 0) tokensPerSecond = output / (ms / 1000)
-          // Too few to learn from: a tool call alone, a word or two
-          if (output > 0 && estimated >= 20) {
-            scale = Math.max(0.5, Math.min(4, 0.7 * scale + 0.3 * (output / estimated)))
-          }
-          liveTokensPerSecond = undefined
-          $.ui.invalidate('ui.render')
+          stopAt = now
+          output = chunk.usage?.output_tokens ?? 0
         } else if (ms >= LIVE_AFTER_MS && now - drawnAt >= LIVE_EVERY_MS && estimated > 0) {
           liveTokensPerSecond = (estimated * scale) / (ms / 1000)
           drawnAt = now
@@ -215,6 +216,27 @@ export const register: Register = (on, options) => {
         }
         yield chunk
       }
+
+      if (firstAt !== undefined && stopAt !== undefined) {
+        // A tool the API runs itself (the advisor) holds the stream while the model writes
+        // nothing of this response, so its time is left out as the wait before the first chunk is
+        const start = firstAt
+        const end = stopAt
+        const serverMs = (step.value?.serverToolUses ?? []).reduce((sum, use) => {
+          const from = Math.max(start, use.startedAt)
+          const to = Math.min(end, use.endedAt ?? end)
+          return sum + Math.max(0, to - from)
+        }, 0)
+        const ms = end - start - serverMs
+        if (ms >= MIN_SPEED_MS && output > 0) tokensPerSecond = output / (ms / 1000)
+        // Too few to learn from: a tool call alone, a word or two
+        if (output > 0 && estimated >= 20) {
+          scale = Math.max(0.5, Math.min(4, 0.7 * scale + 0.3 * (output / estimated)))
+        }
+        liveTokensPerSecond = undefined
+        $.ui.invalidate('ui.render')
+      }
+      return step.value
     } finally {
       // A response cut off before its stop leaves the last real figure, not a stale estimate
       if (liveTokensPerSecond !== undefined) {
