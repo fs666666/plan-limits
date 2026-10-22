@@ -49,6 +49,20 @@
 | `circle` | ○ ◔ ◑ ◕ ● | 5 档 | 是，但在多数字体里个头偏小 |
 | `none` | 不显示圆环 | — | — |
 
+### 状态栏
+
+mod 还自带一个输入框下方的状态栏，显示当前目录、模型和 effort，配色取自 Catppuccin Mocha：
+
+```
+/home/wds  Opus 5.5 · xhigh
+```
+
+effort 按强度从冷到暖着色：`low` 绿、`medium` 黄、`high` 橙、`xhigh` / `max` 红。
+
+- 不会改动你的 `settings.json`：mod 只在你**没有**配置 `statusLine` 时，把自带的脚本（`statusline/statusline.sh`）借给合并后的设置。你已经有自己的状态栏的话，保留你的。卸载或停用 mod 后状态栏也随之消失。
+- 需要 `bash`（Windows 上 Claude Code 本来就依赖 Git Bash）。装了 `jq` 时用它解析会话信息，没装也能用。
+- 不想要的话在 `/config` 里关掉 `Status line`。
+
 ## 安装
 
 需要 Claude Code 2.1.287 及以上。这个仓库本身就是一个插件市场：

@@ -1,7 +1,7 @@
 {
   "name": "plan-limits",
-  "version": "0.9.1",
-  "description": "A weather forecast for your context window and your plan's 5-hour and weekly limits, with reset times, this session's cost and the last response's output speed, above the prompt",
+  "version": "0.10.0",
+  "description": "A weather forecast for your context window and your plan's 5-hour and weekly limits, with reset times, this session's cost and the last response's output speed, above the prompt; and a status line with the directory, model and effort under it",
   "author": {
     "name": "zer"
   },
@@ -34,6 +34,12 @@
       "type": "boolean",
       "title": "Show output speed",
       "description": "Show the output speed of the last response, in tokens per second.",
+      "default": true
+    },
+    "statusLine": {
+      "type": "boolean",
+      "title": "Status line",
+      "description": "Show the directory, model and effort under the prompt, in the Catppuccin colours, unless your settings already set a status line of their own. Needs bash.",
       "default": true
     },
     "ringStyle": {

@@ -246,6 +246,20 @@ export const register: Register = (on, options) => {
     }
   })
 
+  // The status line under the prompt (directory, model, effort) is the script this mod ships,
+  // lent to the merged settings rather than written to any file: settings that set a status line
+  // of their own keep it, and uninstalling the mod takes ours away with it
+  if (shows('statusLine')) {
+    on('settings.read', async ($, e, next) => {
+      // A call on $ resolves its value wrapped, { value: settings }, or { deny }
+      const result = await next(e)
+      if (e.source || !result.value || result.value.statusLine !== undefined) return result
+      // Forward slashes: Git Bash on Windows takes C:/... as readily as a POSIX shell takes /...
+      const script = `${$.plugin.root.replace(/\\/g, '/')}/statusline/statusline.sh`
+      return { value: { ...result.value, statusLine: { type: 'command', command: `bash "${script}"` } } }
+    })
+  }
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     // Redraw once a minute; a reload stops the old timer by itself

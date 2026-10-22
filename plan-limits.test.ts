@@ -1,5 +1,5 @@
-import { describe, expect, mock, test } from 'claude-code/testing'
-import type { SessionUsage } from 'claude-code'
+import { describe, expect, mock, test, type Engine, type Plugin } from 'claude-code/testing'
+import type { SessionUsage, SettingsSource } from 'claude-code'
 
 // Local times, so the tests read the same in any time zone: Wednesday 20:00
 const NOW = new Date(2026, 9, 7, 20, 0).getTime()
@@ -320,5 +320,43 @@ describe('plan-limits', () => {
 
     const ui = await $.ui.mount({ plugin: 'plan-limits', surface: 'terminal', component: 'AbovePrompt', props: props(120) })
     expect(await ui.find({ key: 'plan-limits' })).toBeUndefined()
+  })
+
+
+  // The test's $ raises no settings.read, so a probe plugin reads the settings as another
+  // plugin would, through plan-limits' hook, and hands them back as a tool's result
+  const PROBE = {
+    name: 'probe',
+    register(on) {
+      on('tool.call', { tool: 'mcp__probe__settings' }, async ($, e) => ({
+        result: await $.settings.read(e.source ? { source: e.source as SettingsSource } : undefined),
+      }))
+    },
+  } satisfies Plugin
+  const settingsOf = async ($: Engine, source?: SettingsSource) =>
+    ((await $.tool.call({ tool: 'mcp__probe__settings', source })) as { result: Record<string, unknown> }).result
+
+  test('lends the status line script when no settings set a status line', { plugins: [PROBE] }, async ($, on) => {
+    on('settings.read', () => ({ value: { theme: 'dark' } }))
+    const settings = await settingsOf($)
+    expect(settings.theme).toBe('dark')
+    expect(settings.statusLine).toMatchObject({ type: 'command' })
+    expect((settings.statusLine as { command: string }).command).toMatch(/^bash ".*\/statusline\/statusline\.sh"$/)
+  })
+
+  test("keeps the person's own status line", { plugins: [PROBE] }, async ($, on) => {
+    const own = { type: 'command', command: 'my-statusline' }
+    on('settings.read', () => ({ value: { statusLine: own } }))
+    expect((await settingsOf($)).statusLine).toEqual(own)
+  })
+
+  test('lends nothing to a read of one source', { plugins: [PROBE] }, async ($, on) => {
+    on('settings.read', () => ({ value: {} }))
+    expect((await settingsOf($, 'user')).statusLine).toBeUndefined()
+  })
+
+  test('lends nothing with the status line turned off', { plugins: [PROBE], options: { statusLine: false } }, async ($, on) => {
+    on('settings.read', () => ({ value: {} }))
+    expect((await settingsOf($)).statusLine).toBeUndefined()
   })
 })
